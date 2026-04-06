@@ -1,13 +1,14 @@
 #This file is going to have all my methods for thresholding
 import Constants
 import numpy as np
+import math
 
 class Threshold:
     def __init__(self, array):
         self.array = array
 
     #This method thresholds by setting all values above the threshold to the threshold
-    def clippingNoKnee(self, threshold = None):
+    def clippingNoKnee(self, threshold : float = None):
         if threshold == None: 
             threshold = Constants.THRESHOLD
         clippedArray = self.array.copy()
@@ -17,22 +18,22 @@ class Threshold:
         return clippedArray
     
     #This method thresholds by applying the ratio to every value over the threshold
-    def limitingNoKnee(self, threshold = None, ratio = None):
+    def limitingNoKnee(self, threshold : float = None, ratio : float  = None):
         if threshold == None:
             threshold = Constants.THRESHOLD
         if ratio == None:
             ratio = Constants.RATIO
         limitedArray = self.array.copy()
 
-        for sound in limitedArray:
-            if sound > threshold:
-                sound = ((sound - threshold) / ratio) + threshold
+        for i in range(len(limitedArray)):
+            if limitedArray[i] > threshold:
+                limitedArray[i] = ((limitedArray[i] - threshold) / ratio) + threshold
 
         return limitedArray
     
     #This function determines whether a value is above, below, or in the knee region of the threshold
     #This function is used in the "divideWithThreshold" function 
-    def getRegion(val, threshold = None, knee = None):
+    def getRegion(self, val, threshold : float = None, knee : float = None):
         if threshold is None:
             threshold = Constants.THRESHOLD
         if knee is None:
@@ -45,7 +46,7 @@ class Threshold:
         else:
             return "knee"
         
-    def divideWithThreshold(self, threshold=None, knee=None):
+    def divideWithThreshold(self, threshold : float = None, knee : float = None):
         if threshold is None:
             threshold = Constants.THRESHOLD
         if knee is None:
@@ -104,12 +105,23 @@ class Threshold:
 
     Then i apply the inverse change of basis to get these points back in terms of the original coordinate system
     """
+
+    #I need to make a function to turn values into coordinates
+    def convertValuesToCoordinates(self, inputVal: float, outputVal: float):
+        #The inputVal is the value going in so like the og sound and the output value is the result
+        #if the value is under the threshold and knee the inputVal = outputVal
+        coordinate = [inputVal, outputVal]
+
+        return coordinate
+
+
+        #im going to assume that both before and after knee list values need to be thresholded even though one doesnt
         #This function is going to make a parabolic knee region
-    def parabolaKnee(self, kneeListIndex, kneeListValues, beforKneeList, afterKneeList):
-        endpointBefore1 = beforKneeList[-1]
-        endpointBefore2 = beforKneeList[-2]
-        endpointAfter1 = afterKneeList[0]
-        endpointAfter2 = afterKneeList[1]
+    def parabolaKnee(self, kneeListIndex : int, kneeListValues : list, beforKneeListPreThresh : list, beforeKneeListPostThresh : list, afterKneeListPreThresh : list, afterKneeListPostThresh : list):
+        endpointBefore1 = convertValuesToCoordinates(beforKneeListPreThresh[-1], beforeKneeListPostThresh[-1])
+        endpointBefore2 = convertValuesToCoordinates(beforKneeListPreThresh[-2], beforeKneeListPostThresh[-2])
+        endpointAfter1 = convertValuesToCoordinates(afterKneeListPreThresh[0], afterKneeListPostThresh[0])
+        endpointAfter2 = convertValuesToCoordinates(afterKneeListPreThresh[1], afterKneeListPostThresh[1])
 
         a = endpointBefore1[0]
         b = endpointBefore1[1]
@@ -141,3 +153,92 @@ class Threshold:
 
         #return just the y values of the parabola points
         return [point[1] for point in parabolaPoints]
+
+    #This function is going to make the knee linear
+
+    def linearKnee(self, kneeListIndex : int, kneeListValues : list, beforKneeListPreThresh : list, beforeKneeListPostThresh : list, afterKneeListPreThresh : list, afterKneeListPostThresh : list):
+        #get two points
+        endpointBefore = convertValuesToCoordinates(beforKneeListPreThresh[-1], beforeKneeListPostThresh[-1])
+        endpointAfter = convertValuesToCoordinates(afterKneeListPreThresh[0], afterKneeListPostThresh[0])
+
+        #y-y1 = m(x-x1)
+        #m = (y - y1/x - x1)
+        #y = m(x-x1) + y1
+
+        slope = (endpointBefore[1]-endpointAfter[1])/(endpointBefore[0] - endpointAfter[0])
+
+        #generate x values
+        kneeLength = len(kneeListValues)
+
+        xValues = [endpointBefore[0] + ((endpointAfter[0] - endpointBefore[0]) / kneeLength) * i for i in range(kneeLength)]
+        yValues = [(slope * (endpointBefore[0] - x)) + endpointBefore[1] for x in xValues]
+
+        return yValues
+
+        
+
+    #This function is going to just take every item in the knee and clip it in sections
+
+    '''
+    What this function needs to do:
+    take in list of sounds
+    take in number of sections
+    take in the lowest value above the knee
+    take in the highest value below the knee
+
+    function should find lowest sound in list
+    function should find the highest sound in the list
+
+    figure out how wide each section should be: 
+        sectionWidth = (highest sound - lowest sound)/number of sections
+
+    valueWidth = (valAboveKnee - valBelowKnee)/numSections
+    
+    clippedValue = []
+
+    for i in numBins:
+        clippedValue[i] = valBelowKnee + (i * valueWidth) + valueWidth/2
+
+    figure out which bin everything belongs in -> 
+
+    for sound in list: 
+        binNumber = ceiling((sound - lowest sound)/sectionWidth)
+
+        binNumber = min(binNumber, number of sections)
+
+        sound = clippedValue[binNumber]
+
+    return list of sounds
+
+    '''
+
+    def clipKneeBySection(self, kneeList, beforeKneeList, AfterKneeList, numSections=None):
+        valAboveKnee = max(beforeKneeList[0], AfterKneeList[0])
+        valBelowKnee = min(beforeKneeList[-1], AfterKneeList[-1])
+
+        if numSections is None:
+            numSections = Constants.NUMSECTIONS
+
+        lowestSound = min(kneeList)
+        highestSound = max(kneeList)
+
+        sectionWidth = (highestSound - lowestSound) / numSections
+        valueWidth = (valAboveKnee - valBelowKnee) / numSections
+
+        clippedValues = [valBelowKnee + (i * valueWidth) + valueWidth / 2 for i in range(numSections)]
+
+        result = kneeList.copy()
+        for i in range(len(result)):
+            binNumber = min(math.ceil((result[i] - lowestSound) / sectionWidth), numSections - 1)
+            result[i] = clippedValues[binNumber]
+
+        return result
+
+
+
+
+
+
+
+    
+
